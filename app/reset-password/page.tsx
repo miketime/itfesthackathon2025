@@ -4,6 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
