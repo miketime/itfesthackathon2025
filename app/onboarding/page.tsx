@@ -145,21 +145,26 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user found')
 
-      // Save interest subscriptions
-      if (selectedInterests.length > 0) {
-        const interestSubscriptions = selectedInterests.map(interest_id => ({
-          user_id: user.id,
-          interest_id
-        }))
-
-        const { error: interestError } = await supabase
-          .from('user_interest_subscriptions')
-          .insert(interestSubscriptions)
-
-        if (interestError) throw interestError
+      // Save interest subscriptions (required - must have at least one)
+      if (selectedInterests.length === 0) {
+        throw new Error('Please select at least one interest')
       }
 
-      // Save group subscriptions
+      const interestSubscriptions = selectedInterests.map(interest_id => ({
+        user_id: user.id,
+        interest_id
+      }))
+
+      const { error: interestError } = await supabase
+        .from('user_interest_subscriptions')
+        .upsert(interestSubscriptions, { onConflict: 'user_id,interest_id' })
+
+      if (interestError) {
+        console.error('Interest subscription error:', interestError)
+        throw interestError
+      }
+
+      // Save group subscriptions (optional)
       if (selectedGroups.length > 0) {
         const groupSubscriptions = selectedGroups.map(group_id => ({
           user_id: user.id,
@@ -168,12 +173,15 @@ export default function OnboardingPage() {
 
         const { error: groupError } = await supabase
           .from('user_group_subscriptions')
-          .insert(groupSubscriptions)
+          .upsert(groupSubscriptions, { onConflict: 'user_id,group_id' })
 
-        if (groupError) throw groupError
+        if (groupError) {
+          console.error('Group subscription error:', groupError)
+          throw groupError
+        }
       }
 
-      // Save subgroup subscriptions
+      // Save subgroup subscriptions (optional)
       if (selectedSubgroups.length > 0) {
         const subgroupSubscriptions = selectedSubgroups.map(subgroup_id => ({
           user_id: user.id,
@@ -182,16 +190,19 @@ export default function OnboardingPage() {
 
         const { error: subgroupError } = await supabase
           .from('user_subgroup_subscriptions')
-          .insert(subgroupSubscriptions)
+          .upsert(subgroupSubscriptions, { onConflict: 'user_id,subgroup_id' })
 
-        if (subgroupError) throw subgroupError
+        if (subgroupError) {
+          console.error('Subgroup subscription error:', subgroupError)
+          throw subgroupError
+        }
       }
 
       // Redirect to feed
       router.push('/feed')
     } catch (error: any) {
       console.error('Error saving subscriptions:', error)
-      alert('Error saving your preferences. Please try again.')
+      alert(error.message || 'Error saving your preferences. Please try again.')
     } finally {
       setSaving(false)
     }
