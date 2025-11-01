@@ -942,17 +942,18 @@ export default function Feed() {
           </div>
 
           {/* Center: Logo */}
-          <div className="absolute left-1/2 transform -translate-x-1/2">
-            <div className="w-12 h-12 rounded-lg overflow-hidden">
-              <Image
-                src="https://raw.githubusercontent.com/miketime/itfesthackathon2025/refs/heads/main/logo1.png"
-                alt="Logo"
-                width={48}
-                height={48}
-                className="w-full h-full object-cover"
-              />
-            </div>
-          </div>
+         <div className="absolute left-1/2 transform -translate-x-1/2">
+  <div className="w-24 h-14 rounded-lg overflow-hidden bg-white dark:bg-gray-700 shadow-md">
+    <Image
+      src="https://raw.githubusercontent.com/miketime/itfesthackathon2025/refs/heads/main/logo1.png"
+      alt="Logo"
+      width={96}
+      height={56}
+      priority
+      className="w-full h-full object-contain"
+    />
+  </div>
+</div>
 
           {/* Right: Profile */}
           <button
