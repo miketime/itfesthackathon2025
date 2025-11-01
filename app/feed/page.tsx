@@ -52,10 +52,37 @@ interface Message {
   created_at: string
   sender?: {
     full_name: string | null
-  }
+  } | {
+    full_name: string | null
+  }[]
   receiver?: {
     full_name: string | null
-  }
+  } | {
+    full_name: string | null
+  }[]
+}
+
+interface Comment {
+  id: number
+  content: string
+  user_id: string
+  post_id: number
+  created_at: string
+  profiles?: {
+    full_name: string | null
+  } | {
+    full_name: string | null
+  }[]
+}
+
+interface PostLike {
+  user_id: string
+  post_id: number
+  profiles?: {
+    full_name: string | null
+  } | {
+    full_name: string | null
+  }[]
 }
 
 export default function Feed() {
@@ -86,6 +113,11 @@ export default function Feed() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
+  // Post interactions
+  const [postComments, setPostComments] = useState<Record<number, Comment[]>>({})
+  const [postLikes, setPostLikes] = useState<Record<number, PostLike[]>>({})
+  const [expandedComments, setExpandedComments] = useState<number[]>([])
+
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -107,6 +139,12 @@ export default function Feed() {
       fetchUnreadCounts()
     }
   }, [currentUserId])
+
+  useEffect(() => {
+    if (posts.length > 0) {
+      fetchPostInteractions()
+    }
+  }, [posts])
 
   const fetchData = async () => {
     try {
@@ -328,6 +366,70 @@ export default function Feed() {
     } catch (error) {
       console.error('Error sending message:', error)
     }
+  }
+
+  const fetchPostInteractions = async () => {
+    try {
+      const postIds = posts.map((p: Post) => p.id)
+
+      // Fetch comments for all posts
+      const { data: commentsData } = await supabase
+        .from('comments')
+        .select(`
+          id,
+          content,
+          user_id,
+          post_id,
+          created_at,
+          profiles:user_id (
+            full_name
+          )
+        `)
+        .in('post_id', postIds)
+        .is('parent_comment_id', null)
+        .order('created_at', { ascending: true })
+
+      // Fetch likes for all posts
+      const { data: likesData } = await supabase
+        .from('post_likes')
+        .select(`
+          user_id,
+          post_id,
+          profiles:user_id (
+            full_name
+          )
+        `)
+        .in('post_id', postIds)
+
+      // Group comments by post_id
+      const commentsByPost: Record<number, Comment[]> = {}
+      commentsData?.forEach((comment: any) => {
+        if (!commentsByPost[comment.post_id]) {
+          commentsByPost[comment.post_id] = []
+        }
+        commentsByPost[comment.post_id].push(comment)
+      })
+
+      // Group likes by post_id
+      const likesByPost: Record<number, PostLike[]> = {}
+      likesData?.forEach((like: any) => {
+        if (!likesByPost[like.post_id]) {
+          likesByPost[like.post_id] = []
+        }
+        likesByPost[like.post_id].push(like)
+      })
+
+      setPostComments(commentsByPost)
+      setPostLikes(likesByPost)
+    } catch (error) {
+      console.error('Error fetching post interactions:', error)
+    }
+  }
+
+  const toggleComments = (postId: number) => {
+    setExpandedComments(prev =>
+      prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]
+    )
   }
 
   const toggleInterest = (id: number) => {
@@ -584,16 +686,82 @@ export default function Feed() {
             <div className="space-y-4">
               {posts.map((post: Post) => {
                 const profile = Array.isArray(post.profiles) ? post.profiles[0] : post.profiles
+                const likes = postLikes[post.id] || []
+                const comments = postComments[post.id] || []
+                const isCommentsExpanded = expandedComments.includes(post.id)
+                const visibleComments = isCommentsExpanded ? comments : comments.slice(0, 2)
+
                 return (
                   <div key={post.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    {/* Post Header */}
                     <div className="flex items-center mb-4">
-                      <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full mr-3"></div>
+                      <div className="w-10 h-10 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full mr-3"></div>
                       <div>
-                        <p className="font-semibold">{profile?.full_name || 'Unknown User'}</p>
-                        <p className="text-xs text-gray-500">{new Date(post.created_at).toLocaleDateString()}</p>
+                        <p className="font-semibold text-gray-900 dark:text-white">{profile?.full_name || 'Unknown User'}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(post.created_at).toLocaleDateString()}</p>
                       </div>
                     </div>
-                    <p className="text-gray-800 dark:text-gray-200">{post.content}</p>
+
+                    {/* Post Content */}
+                    <p className="text-gray-800 dark:text-gray-200 mb-4">{post.content}</p>
+
+                    {/* Likes */}
+                    {likes.length > 0 && (
+                      <div className="flex items-center gap-2 mb-3 text-sm text-gray-600 dark:text-gray-400">
+                        <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                        </svg>
+                        <span className="font-medium">{likes.length} {likes.length === 1 ? 'like' : 'likes'}</span>
+                      </div>
+                    )}
+
+                    {/* Comments Section */}
+                    {comments.length > 0 && (
+                      <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                        <div className="flex items-center gap-2 mb-3 text-sm text-gray-600 dark:text-gray-400">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          <span className="font-medium">{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
+                        </div>
+
+                        {/* Comments List */}
+                        <div className="space-y-3">
+                          {visibleComments.map((comment) => {
+                            const commentProfile = Array.isArray(comment.profiles) ? comment.profiles[0] : comment.profiles
+                            return (
+                              <div key={comment.id} className="bg-gray-50 dark:bg-gray-750 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                <div className="flex items-start gap-2">
+                                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex-shrink-0"></div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                      {commentProfile?.full_name || 'Unknown User'}
+                                    </p>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{comment.content}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                      {new Date(comment.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Show More/Less Comments Button */}
+                        {comments.length > 2 && (
+                          <button
+                            onClick={() => toggleComments(post.id)}
+                            className="mt-3 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium transition"
+                          >
+                            {isCommentsExpanded
+                              ? 'Show less comments'
+                              : `Show ${comments.length - 2} more ${comments.length - 2 === 1 ? 'comment' : 'comments'}`
+                            }
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
