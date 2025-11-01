@@ -511,20 +511,27 @@ export default function Feed() {
     }
   }
 
-  const sendMessage = async () => {
+ const sendMessage = async () => {
     if (!selectedUser || !currentUserId || !newMessage.trim()) return
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('messages')
         .insert({
           sender_id: currentUserId,
           receiver_id: selectedUser.id,
           content: newMessage.trim()
         })
+      
+      if (error) {
+        throw error
+      }
 
       setNewMessage('')
-      fetchMessages(selectedUser.id)
+      
+      // REMOVE THIS LINE:
+      // fetchMessages(selectedUser.id) 
+
     } catch (error) {
       console.error('Error sending message:', error)
     }
