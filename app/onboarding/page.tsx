@@ -10,7 +10,7 @@ interface Interest {
   id: number
   name: string
 }
-
+ 
 interface Group {
   id: number
   name: string
