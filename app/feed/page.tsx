@@ -528,9 +528,7 @@ export default function Feed() {
       }
 
       setNewMessage('')
-      
-      // REMOVE THIS LINE:
-      // fetchMessages(selectedUser.id) 
+      fetchMessages(selectedUser.id) 
 
     } catch (error) {
       console.error('Error sending message:', error)
