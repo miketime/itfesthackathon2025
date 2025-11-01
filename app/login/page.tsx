@@ -42,7 +42,7 @@ export default function LoginPage() {
         {/* Company Logo Placeholder */}
         <div className="flex justify-center mb-8">
           <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-4xl font-bold">LOGO</span>
+            <span className="text-white text-4xl font-bold"></span>
           </div>
         </div>
 
