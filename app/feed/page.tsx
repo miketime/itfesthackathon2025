@@ -37,6 +37,55 @@ interface Post {
     full_name: string | null
     avatar_url: string | null
   }[]
+  subgroups?: {
+    id: number
+    name: string
+    groups?: {
+      id: number
+      name: string
+      interests?: {
+        id: number
+        name: string
+      } | {
+        id: number
+        name: string
+      }[]
+    } | {
+      id: number
+      name: string
+      interests?: {
+        id: number
+        name: string
+      } | {
+        id: number
+        name: string
+      }[]
+    }[]
+  } | {
+    id: number
+    name: string
+    groups?: {
+      id: number
+      name: string
+      interests?: {
+        id: number
+        name: string
+      } | {
+        id: number
+        name: string
+      }[]
+    } | {
+      id: number
+      name: string
+      interests?: {
+        id: number
+        name: string
+      } | {
+        id: number
+        name: string
+      }[]
+    }[]
+  }[]
 }
 
 interface User {
@@ -122,6 +171,13 @@ export default function Feed() {
   const [newComment, setNewComment] = useState<Record<number, string>>({})
   const [showCommentInput, setShowCommentInput] = useState<number[]>([])
 
+  // New post modal
+  const [showNewPostModal, setShowNewPostModal] = useState(false)
+  const [newPostContent, setNewPostContent] = useState('')
+  const [newPostInterest, setNewPostInterest] = useState<number | null>(null)
+  const [newPostGroup, setNewPostGroup] = useState<number | null>(null)
+  const [newPostSubgroup, setNewPostSubgroup] = useState<number | null>(null)
+
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -139,32 +195,42 @@ export default function Feed() {
   }, [selectedUser, currentUserId])
 
   useEffect(() => {
-    if (!selectedUser || !currentUserId) return
+    if (!currentUserId) return
 
-    // Subscribe to real-time message updates
+    // Subscribe to all message inserts involving current user
     const channel = supabase
-      .channel('messages-channel')
+      .channel('messages-realtime')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'messages',
-          filter: `or(and(sender_id.eq.${currentUserId},receiver_id.eq.${selectedUser.id}),and(sender_id.eq.${selectedUser.id},receiver_id.eq.${currentUserId}))`
+          table: 'messages'
         },
         (payload) => {
-          // Refetch messages to include the new message with profile data
-          fetchMessages(selectedUser.id)
-          fetchUnreadCounts()
+          const newMessage = payload.new as any
+
+          // Check if message involves current user
+          if (newMessage.sender_id === currentUserId || newMessage.receiver_id === currentUserId) {
+            // If this is the currently selected conversation, refresh messages
+            if (selectedUser &&
+                ((newMessage.sender_id === currentUserId && newMessage.receiver_id === selectedUser.id) ||
+                 (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUserId))) {
+              fetchMessages(selectedUser.id)
+            }
+
+            // Always update unread counts
+            fetchUnreadCounts()
+          }
         }
       )
       .subscribe()
 
-    // Cleanup subscription on unmount or when selectedUser changes
+    // Cleanup subscription on unmount
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [selectedUser, currentUserId])
+  }, [currentUserId, selectedUser])
 
   useEffect(() => {
     if (currentUserId) {
@@ -320,6 +386,18 @@ export default function Feed() {
           profiles:user_id (
             full_name,
             avatar_url
+          ),
+          subgroups:subgroup_id (
+            id,
+            name,
+            groups:group_id (
+              id,
+              name,
+              interests:interest_id (
+                id,
+                name
+              )
+            )
           )
         `)
         .in('subgroup_id', subgroupFilter)
@@ -587,6 +665,34 @@ export default function Feed() {
     router.push('/login')
   }
 
+  const handleCreatePost = async () => {
+    if (!currentUserId || !newPostContent.trim() || !newPostSubgroup) {
+      alert('Please fill in all fields')
+      return
+    }
+
+    try {
+      await supabase.from('posts').insert({
+        user_id: currentUserId,
+        content: newPostContent.trim(),
+        subgroup_id: newPostSubgroup
+      })
+
+      // Reset modal state
+      setNewPostContent('')
+      setNewPostInterest(null)
+      setNewPostGroup(null)
+      setNewPostSubgroup(null)
+      setShowNewPostModal(false)
+
+      // Refresh posts
+      fetchPosts()
+    } catch (error) {
+      console.error('Error creating post:', error)
+      alert('Failed to create post')
+    }
+  }
+
   const handleCheckInterest = (id: number) => {
     setSelectedInterests(prev => {
       const isChecked = prev.includes(id)
@@ -682,7 +788,7 @@ export default function Feed() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#1a2238]">
+    <div className="min-h-screen bg-gray-50 dark:bg-[#121727]">
       {/* Top Banner */}
       <div className="bg-white dark:bg-[#1a2238] shadow-md sticky top-0 z-50">
         <div className="max-w-full px-4 py-3 flex items-center justify-between">
@@ -802,19 +908,30 @@ export default function Feed() {
                             />
                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-[#ff6a3d] dark:group-hover:text-[#ff6a3d] transition">{group.name}</span>
                           </label>
-                          <button
-                            onClick={() => toggleGroup(group.id)}
-                            className="p-1 hover:bg-gray-200 dark:hover:bg-[#9daaf2]/20 rounded transition"
-                          >
-                            <svg
-                              className={`w-3.5 h-3.5 transition-transform text-gray-500 dark:text-gray-400 ${expandedGroups.includes(group.id) ? 'rotate-180' : ''}`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => alert(`Add to group: ${group.name}`)}
+                              className="p-1 hover:bg-[#9daaf2]/20 rounded transition"
+                              title="Add to group"
                             >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
+                              <svg className="w-3.5 h-3.5 text-[#9daaf2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => toggleGroup(group.id)}
+                              className="p-1 hover:bg-gray-200 dark:hover:bg-[#9daaf2]/20 rounded transition"
+                            >
+                              <svg
+                                className={`w-3.5 h-3.5 transition-transform text-gray-500 dark:text-gray-400 ${expandedGroups.includes(group.id) ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
 
                         {expandedGroups.includes(group.id) && (
@@ -822,15 +939,26 @@ export default function Feed() {
                             {subgroups
                               .filter(sg => sg.group_id === group.id)
                               .map(subgroup => (
-                                <label key={subgroup.id} className="flex items-center cursor-pointer group bg-gray-50 dark:bg-[#1a2238] border border-gray-200 dark:border-[#9daaf2] rounded px-2 py-1.5 hover:border-[#ff6a3d] dark:hover:border-[#ff6a3d] transition">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedSubgroups.includes(subgroup.id)}
-                                    onChange={() => handleCheckSubgroup(subgroup.id)}
-                                    className="w-3 h-3 mr-2 accent-[#9daaf2] cursor-pointer"
-                                  />
-                                  <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#ff6a3d] dark:group-hover:text-[#ff6a3d] transition">{subgroup.name}</span>
-                                </label>
+                                <div key={subgroup.id} className="flex items-center gap-2 bg-gray-50 dark:bg-[#1a2238] border border-gray-200 dark:border-[#9daaf2] rounded px-2 py-1.5 hover:border-[#ff6a3d] dark:hover:border-[#ff6a3d] transition">
+                                  <label className="flex items-center cursor-pointer flex-1 group">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedSubgroups.includes(subgroup.id)}
+                                      onChange={() => handleCheckSubgroup(subgroup.id)}
+                                      className="w-3 h-3 mr-2 accent-[#9daaf2] cursor-pointer"
+                                    />
+                                    <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#ff6a3d] dark:group-hover:text-[#ff6a3d] transition">{subgroup.name}</span>
+                                  </label>
+                                  <button
+                                    onClick={() => alert(`Add to subgroup: ${subgroup.name}`)}
+                                    className="p-0.5 hover:bg-[#9daaf2]/20 rounded transition flex-shrink-0"
+                                    title="Add to subgroup"
+                                  >
+                                    <svg className="w-3 h-3 text-[#9daaf2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                  </button>
+                                </div>
                               ))}
                           </div>
                         )}
@@ -860,13 +988,25 @@ export default function Feed() {
                 const isCommentsExpanded = expandedComments.includes(post.id)
                 const visibleComments = isCommentsExpanded ? comments : comments.slice(0, 2)
 
+                // Extract subgroup, group, and interest info
+                const subgroupData = Array.isArray(post.subgroups) ? post.subgroups[0] : post.subgroups
+                const groupData = subgroupData?.groups ? (Array.isArray(subgroupData.groups) ? subgroupData.groups[0] : subgroupData.groups) : null
+                const interestData = groupData?.interests ? (Array.isArray(groupData.interests) ? groupData.interests[0] : groupData.interests) : null
+
                 return (
                   <div key={post.id} className="bg-white dark:bg-[#1a2238] rounded-lg shadow border border-gray-200 dark:border-[#9daaf2] p-6">
                     {/* Post Header */}
                     <div className="flex items-center mb-4">
                       <div className="w-10 h-10 bg-gradient-to-br from-[#9daaf2] to-[#ff6a3d] rounded-full mr-3"></div>
-                      <div>
-                        <p className="font-semibold text-gray-900 dark:text-white">{profile?.full_name || 'Unknown User'}</p>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-900 dark:text-white">{profile?.full_name || 'Unknown User'}</p>
+                          {interestData && groupData && subgroupData && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              • {interestData.name} → {groupData.name} → {subgroupData.name}
+                            </p>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(post.created_at).toLocaleDateString()}</p>
                       </div>
                     </div>
@@ -985,6 +1125,19 @@ export default function Feed() {
               })}
             </div>
           )}
+
+          {/* New Post Button */}
+          <div className="flex justify-center mt-6 pb-6">
+            <button
+              onClick={() => setShowNewPostModal(true)}
+              className="px-8 py-3 bg-[#9daaf2] hover:bg-[#ff6a3d] text-white font-semibold rounded-lg shadow-lg transition flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Post
+            </button>
+          </div>
         </div>
 
         {/* Right Panel - 25% - Users & Messages */}
@@ -1097,6 +1250,124 @@ export default function Feed() {
           </div>
         </div>
       </div>
+
+      {/* New Post Modal */}
+      {showNewPostModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setShowNewPostModal(false)}>
+          <div className="bg-white dark:bg-[#1a2238] rounded-lg shadow-xl p-6 w-full max-w-2xl border border-gray-200 dark:border-[#9daaf2]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create New Post</h2>
+              <button
+                onClick={() => setShowNewPostModal(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Content Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Post Content
+                </label>
+                <textarea
+                  value={newPostContent}
+                  onChange={(e) => setNewPostContent(e.target.value)}
+                  placeholder="What's on your mind?"
+                  rows={4}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-white dark:bg-[#1a2238] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#ff6a3d]"
+                />
+              </div>
+
+              {/* Interest Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Interest
+                </label>
+                <select
+                  value={newPostInterest || ''}
+                  onChange={(e) => {
+                    const interestId = parseInt(e.target.value)
+                    setNewPostInterest(interestId || null)
+                    setNewPostGroup(null)
+                    setNewPostSubgroup(null)
+                  }}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-white dark:bg-[#1a2238] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#ff6a3d]"
+                >
+                  <option value="">Select an interest</option>
+                  {interests.map(interest => (
+                    <option key={interest.id} value={interest.id}>{interest.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Group Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Group
+                </label>
+                <select
+                  value={newPostGroup || ''}
+                  onChange={(e) => {
+                    const groupId = parseInt(e.target.value)
+                    setNewPostGroup(groupId || null)
+                    setNewPostSubgroup(null)
+                  }}
+                  disabled={!newPostInterest}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-white dark:bg-[#1a2238] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#ff6a3d] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select a group</option>
+                  {groups
+                    .filter(g => g.interest_id === newPostInterest)
+                    .map(group => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Subgroup Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Subgroup
+                </label>
+                <select
+                  value={newPostSubgroup || ''}
+                  onChange={(e) => setNewPostSubgroup(parseInt(e.target.value) || null)}
+                  disabled={!newPostGroup}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-white dark:bg-[#1a2238] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#ff6a3d] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select a subgroup</option>
+                  {subgroups
+                    .filter(sg => sg.group_id === newPostGroup)
+                    .map(subgroup => (
+                      <option key={subgroup.id} value={subgroup.id}>{subgroup.name}</option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-end pt-4">
+                <button
+                  onClick={() => setShowNewPostModal(false)}
+                  className="px-6 py-2 border border-gray-300 dark:border-[#9daaf2] text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-[#9daaf2]/20 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreatePost}
+                  disabled={!newPostContent.trim() || !newPostSubgroup}
+                  className="px-6 py-2 bg-[#9daaf2] hover:bg-[#ff6a3d] text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Post
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
