@@ -29,11 +29,13 @@ interface Post {
   created_at: string
   user_id: string
   subgroup_id: number
-  author_full_name: string
-  author_avatar_url: string
-  like_count: number
-  comment_count: number
-  user_has_liked: boolean
+  profiles?: {
+    full_name: string | null
+    avatar_url: string | null
+  } | {
+    full_name: string | null
+    avatar_url: string | null
+  }[]
 }
 
 interface User {
@@ -424,18 +426,21 @@ export default function Feed() {
             </div>
           ) : (
             <div className="space-y-4">
-              {posts.map((post: any) => (
-                <div key={post.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  <div className="flex items-center mb-4">
-                    <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full mr-3"></div>
-                    <div>
-                      <p className="font-semibold">{post.profiles?.full_name || 'Unknown User'}</p>
-                      <p className="text-xs text-gray-500">{new Date(post.created_at).toLocaleDateString()}</p>
+              {posts.map((post: Post) => {
+                const profile = Array.isArray(post.profiles) ? post.profiles[0] : post.profiles
+                return (
+                  <div key={post.id} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <div className="flex items-center mb-4">
+                      <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full mr-3"></div>
+                      <div>
+                        <p className="font-semibold">{profile?.full_name || 'Unknown User'}</p>
+                        <p className="text-xs text-gray-500">{new Date(post.created_at).toLocaleDateString()}</p>
+                      </div>
                     </div>
+                    <p className="text-gray-800 dark:text-gray-200">{post.content}</p>
                   </div>
-                  <p className="text-gray-800 dark:text-gray-200">{post.content}</p>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
