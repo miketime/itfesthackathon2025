@@ -779,7 +779,6 @@ export default function Feed() {
         .insert({
           name: newSubgroupName.trim(),
           group_id: selectedGroupForSubgroup,
-          is_approved: true
         })
         .select()
         .single()
