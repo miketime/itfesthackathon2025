@@ -77,6 +77,9 @@ export default function Feed() {
 
   const fetchData = async () => {
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+
       // Fetch interests
       const { data: interestsData } = await supabase
         .from('interests')
@@ -104,6 +107,42 @@ export default function Feed() {
         .from('profiles')
         .select('id, full_name, avatar_url')
       setUsers(usersData || [])
+
+      // Fetch user's subscriptions if logged in
+      if (user) {
+        // Fetch interest subscriptions
+        const { data: interestSubs } = await supabase
+          .from('user_interest_subscriptions')
+          .select('interest_id')
+          .eq('user_id', user.id)
+
+        if (interestSubs) {
+          const interestIds = interestSubs.map(sub => sub.interest_id)
+          setSelectedInterests(interestIds)
+        }
+
+        // Fetch group subscriptions
+        const { data: groupSubs } = await supabase
+          .from('user_group_subscriptions')
+          .select('group_id')
+          .eq('user_id', user.id)
+
+        if (groupSubs) {
+          const groupIds = groupSubs.map(sub => sub.group_id)
+          setSelectedGroups(groupIds)
+        }
+
+        // Fetch subgroup subscriptions
+        const { data: subgroupSubs } = await supabase
+          .from('user_subgroup_subscriptions')
+          .select('subgroup_id')
+          .eq('user_id', user.id)
+
+        if (subgroupSubs) {
+          const subgroupIds = subgroupSubs.map(sub => sub.subgroup_id)
+          setSelectedSubgroups(subgroupIds)
+        }
+      }
 
     } catch (error) {
       console.error('Error fetching data:', error)
@@ -329,27 +368,27 @@ export default function Feed() {
 
       {/* 3-Panel Layout */}
       <div className="flex max-w-full">
-        {/* Left Panel - 25% - Categories */}
-        <div className="w-1/4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 h-[calc(100vh-64px)] overflow-y-auto p-4">
-          <h2 className="font-bold text-lg mb-4">Interests</h2>
+        {/* Left Panel - 15% - Categories */}
+        <div className="w-[15%] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 h-[calc(100vh-64px)] overflow-y-auto p-6">
+          <h2 className="font-bold text-xl mb-6 text-gray-900 dark:text-white">Interests</h2>
           {interests.map(interest => (
-            <div key={interest.id} className="mb-2">
+            <div key={interest.id} className="mb-4">
               <div className="flex items-center justify-between">
-                <label className="flex items-center cursor-pointer flex-1">
+                <label className="flex items-center cursor-pointer flex-1 group">
                   <input
                     type="checkbox"
                     checked={selectedInterests.includes(interest.id)}
                     onChange={() => handleCheckInterest(interest.id)}
-                    className="mr-2"
+                    className="w-4 h-4 mr-3 accent-indigo-600 cursor-pointer"
                   />
-                  <span className="text-sm">{interest.name}</span>
+                  <span className="text-base font-medium text-gray-800 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">{interest.name}</span>
                 </label>
                 <button
                   onClick={() => toggleInterest(interest.id)}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition"
                 >
                   <svg
-                    className={`w-4 h-4 transition-transform ${expandedInterests.includes(interest.id) ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 transition-transform text-gray-600 dark:text-gray-400 ${expandedInterests.includes(interest.id) ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -360,27 +399,27 @@ export default function Feed() {
               </div>
 
               {expandedInterests.includes(interest.id) && (
-                <div className="ml-6 mt-2">
+                <div className="ml-7 mt-3 space-y-2">
                   {groups
                     .filter(g => g.interest_id === interest.id)
                     .map(group => (
-                      <div key={group.id} className="mb-1">
+                      <div key={group.id} className="mb-2">
                         <div className="flex items-center justify-between">
-                          <label className="flex items-center cursor-pointer flex-1">
+                          <label className="flex items-center cursor-pointer flex-1 group">
                             <input
                               type="checkbox"
                               checked={selectedGroups.includes(group.id)}
                               onChange={() => handleCheckGroup(group.id)}
-                              className="mr-2"
+                              className="w-3.5 h-3.5 mr-2.5 accent-indigo-600 cursor-pointer"
                             />
-                            <span className="text-xs">{group.name}</span>
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">{group.name}</span>
                           </label>
                           <button
                             onClick={() => toggleGroup(group.id)}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
                           >
                             <svg
-                              className={`w-3 h-3 transition-transform ${expandedGroups.includes(group.id) ? 'rotate-180' : ''}`}
+                              className={`w-3.5 h-3.5 transition-transform text-gray-500 dark:text-gray-400 ${expandedGroups.includes(group.id) ? 'rotate-180' : ''}`}
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -391,18 +430,18 @@ export default function Feed() {
                         </div>
 
                         {expandedGroups.includes(group.id) && (
-                          <div className="ml-6 mt-1">
+                          <div className="ml-6 mt-2 space-y-1.5">
                             {subgroups
                               .filter(sg => sg.group_id === group.id)
                               .map(subgroup => (
-                                <label key={subgroup.id} className="flex items-center cursor-pointer mb-1">
+                                <label key={subgroup.id} className="flex items-center cursor-pointer group">
                                   <input
                                     type="checkbox"
                                     checked={selectedSubgroups.includes(subgroup.id)}
                                     onChange={() => handleCheckSubgroup(subgroup.id)}
-                                    className="mr-2"
+                                    className="w-3 h-3 mr-2 accent-indigo-600 cursor-pointer"
                                   />
-                                  <span className="text-xs">{subgroup.name}</span>
+                                  <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">{subgroup.name}</span>
                                 </label>
                               ))}
                           </div>
@@ -415,8 +454,8 @@ export default function Feed() {
           ))}
         </div>
 
-        {/* Middle Panel - 50% - Posts */}
-        <div className="w-1/2 h-[calc(100vh-64px)] overflow-y-auto p-6">
+        {/* Middle Panel - 60% - Posts */}
+        <div className="w-[60%] h-[calc(100vh-64px)] overflow-y-auto p-6">
           <h2 className="font-bold text-2xl mb-6">Feed</h2>
           {posts.length === 0 ? (
             <div className="text-center p-12 bg-white dark:bg-gray-800 rounded-lg">
