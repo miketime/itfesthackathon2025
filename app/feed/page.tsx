@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -142,6 +142,10 @@ export default function Feed() {
   const [expandedInterests, setExpandedInterests] = useState<number[]>([])
   const [expandedGroups, setExpandedGroups] = useState<number[]>([])
 
+  // Refs for realtime subscriptions
+  const selectedUserRef = useRef<User | null>(null)
+  const currentUserIdRef = useRef<string | null>(null)
+
   // Data
   const [interests, setInterests] = useState<Interest[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -178,6 +182,14 @@ export default function Feed() {
   const [newPostGroup, setNewPostGroup] = useState<number | null>(null)
   const [newPostSubgroup, setNewPostSubgroup] = useState<number | null>(null)
 
+  // New group/subgroup modals
+  const [showNewGroupModal, setShowNewGroupModal] = useState(false)
+  const [showNewSubgroupModal, setShowNewSubgroupModal] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newSubgroupName, setNewSubgroupName] = useState('')
+  const [selectedInterestForGroup, setSelectedInterestForGroup] = useState<number | null>(null)
+  const [selectedGroupForSubgroup, setSelectedGroupForSubgroup] = useState<number | null>(null)
+
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -188,6 +200,15 @@ export default function Feed() {
     fetchPosts()
   }, [selectedInterests, selectedGroups, selectedSubgroups])
 
+  // Update refs when state changes
+  useEffect(() => {
+    selectedUserRef.current = selectedUser
+  }, [selectedUser])
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId
+  }, [currentUserId])
+
   useEffect(() => {
     if (selectedUser && currentUserId) {
       fetchMessages(selectedUser.id)
@@ -197,7 +218,7 @@ export default function Feed() {
   useEffect(() => {
     if (!currentUserId) return
 
-    // Subscribe to all message inserts involving current user
+    // Subscribe to all message inserts
     const channel = supabase
       .channel('messages-realtime')
       .on(
@@ -207,16 +228,36 @@ export default function Feed() {
           schema: 'public',
           table: 'messages'
         },
-        (payload) => {
+        async (payload) => {
           const newMessage = payload.new as any
+          const currentUser = currentUserIdRef.current
+          const activeUser = selectedUserRef.current
 
           // Check if message involves current user
-          if (newMessage.sender_id === currentUserId || newMessage.receiver_id === currentUserId) {
-            // If this is the currently selected conversation, refresh messages
-            if (selectedUser &&
-                ((newMessage.sender_id === currentUserId && newMessage.receiver_id === selectedUser.id) ||
-                 (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === currentUserId))) {
-              fetchMessages(selectedUser.id)
+          if (currentUser && (newMessage.sender_id === currentUser || newMessage.receiver_id === currentUser)) {
+            // If this is the currently selected conversation, fetch the new message with profile data
+            if (activeUser &&
+                ((newMessage.sender_id === currentUser && newMessage.receiver_id === activeUser.id) ||
+                 (newMessage.sender_id === activeUser.id && newMessage.receiver_id === currentUser))) {
+
+              // Fetch the complete message with profile data
+              const { data: completeMessage } = await supabase
+                .from('messages')
+                .select(`
+                  id,
+                  sender_id,
+                  receiver_id,
+                  content,
+                  created_at,
+                  sender:sender_id (full_name),
+                  receiver:receiver_id (full_name)
+                `)
+                .eq('id', newMessage.id)
+                .single()
+
+              if (completeMessage) {
+                setMessages(prev => [...prev, completeMessage])
+              }
             }
 
             // Always update unread counts
@@ -230,7 +271,7 @@ export default function Feed() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [currentUserId, selectedUser])
+  }, [currentUserId])
 
   useEffect(() => {
     if (currentUserId) {
@@ -693,6 +734,71 @@ export default function Feed() {
     }
   }
 
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim() || !selectedInterestForGroup) {
+      alert('Please enter a group name')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('groups')
+        .insert({
+          name: newGroupName.trim(),
+          interest_id: selectedInterestForGroup,
+          is_approved: true
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Reset modal state
+      setNewGroupName('')
+      setSelectedInterestForGroup(null)
+      setShowNewGroupModal(false)
+
+      // Refresh data
+      fetchData()
+      alert('Group created successfully!')
+    } catch (error) {
+      console.error('Error creating group:', error)
+      alert('Failed to create group')
+    }
+  }
+
+  const handleCreateSubgroup = async () => {
+    if (!newSubgroupName.trim() || !selectedGroupForSubgroup) {
+      alert('Please enter a subgroup name')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('subgroups')
+        .insert({
+          name: newSubgroupName.trim(),
+          group_id: selectedGroupForSubgroup
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Reset modal state
+      setNewSubgroupName('')
+      setSelectedGroupForSubgroup(null)
+      setShowNewSubgroupModal(false)
+
+      // Refresh data
+      fetchData()
+      alert('Subgroup created successfully!')
+    } catch (error) {
+      console.error('Error creating subgroup:', error)
+      alert('Failed to create subgroup')
+    }
+  }
+
   const handleCheckInterest = (id: number) => {
     setSelectedInterests(prev => {
       const isChecked = prev.includes(id)
@@ -839,7 +945,7 @@ export default function Feed() {
           <div className="absolute left-1/2 transform -translate-x-1/2">
             <div className="w-12 h-12 rounded-lg overflow-hidden">
               <Image
-                src="/logo1.png"
+                src="https://raw.githubusercontent.com/miketime/itfesthackathon2025/refs/heads/main/logo1.png"
                 alt="Logo"
                 width={48}
                 height={48}
@@ -862,8 +968,8 @@ export default function Feed() {
 
       {/* 3-Panel Layout */}
       <div className="flex max-w-full">
-        {/* Left Panel - 15% - Categories */}
-        <div className="w-[15%] bg-white dark:bg-[#1a2238] border-r border-gray-200 dark:border-[#9daaf2] h-[calc(100vh-64px)] overflow-y-auto p-6">
+        {/* Left Panel - 20% - Categories */}
+        <div className="w-[20%] bg-white dark:bg-[#1a2238] border-r border-gray-200 dark:border-[#9daaf2] h-[calc(100vh-64px)] overflow-y-auto p-6">
           <h2 className="font-bold text-xl mb-6 text-gray-900 dark:text-white">Interests</h2>
           {interests.map(interest => (
             <div key={interest.id} className="mb-4">
@@ -877,19 +983,33 @@ export default function Feed() {
                   />
                   <span className="text-base font-medium text-gray-800 dark:text-gray-200 group-hover:text-[#ff6a3d] dark:group-hover:text-[#ff6a3d] transition">{interest.name}</span>
                 </label>
-                <button
-                  onClick={() => toggleInterest(interest.id)}
-                  className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#9daaf2]/20 rounded-md transition"
-                >
-                  <svg
-                    className={`w-4 h-4 transition-transform text-gray-600 dark:text-gray-400 ${expandedInterests.includes(interest.id) ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setSelectedInterestForGroup(interest.id)
+                      setShowNewGroupModal(true)
+                    }}
+                    className="p-1.5 hover:bg-[#9daaf2]/20 rounded-md transition"
+                    title="Add group to this interest"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+                    <svg className="w-4 h-4 text-[#9daaf2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => toggleInterest(interest.id)}
+                    className="p-1.5 hover:bg-gray-200 dark:hover:bg-[#9daaf2]/20 rounded-md transition"
+                  >
+                    <svg
+                      className={`w-4 h-4 transition-transform text-gray-600 dark:text-gray-400 ${expandedInterests.includes(interest.id) ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               {expandedInterests.includes(interest.id) && (
@@ -910,9 +1030,12 @@ export default function Feed() {
                           </label>
                           <div className="flex items-center gap-1">
                             <button
-                              onClick={() => alert(`Add to group: ${group.name}`)}
+                              onClick={() => {
+                                setSelectedGroupForSubgroup(group.id)
+                                setShowNewSubgroupModal(true)
+                              }}
                               className="p-1 hover:bg-[#9daaf2]/20 rounded transition"
-                              title="Add to group"
+                              title="Add subgroup to this group"
                             >
                               <svg className="w-3.5 h-3.5 text-[#9daaf2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -939,26 +1062,15 @@ export default function Feed() {
                             {subgroups
                               .filter(sg => sg.group_id === group.id)
                               .map(subgroup => (
-                                <div key={subgroup.id} className="flex items-center gap-2 bg-gray-50 dark:bg-[#1a2238] border border-gray-200 dark:border-[#9daaf2] rounded px-2 py-1.5 hover:border-[#ff6a3d] dark:hover:border-[#ff6a3d] transition">
-                                  <label className="flex items-center cursor-pointer flex-1 group">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedSubgroups.includes(subgroup.id)}
-                                      onChange={() => handleCheckSubgroup(subgroup.id)}
-                                      className="w-3 h-3 mr-2 accent-[#9daaf2] cursor-pointer"
-                                    />
-                                    <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#ff6a3d] dark:group-hover:text-[#ff6a3d] transition">{subgroup.name}</span>
-                                  </label>
-                                  <button
-                                    onClick={() => alert(`Add to subgroup: ${subgroup.name}`)}
-                                    className="p-0.5 hover:bg-[#9daaf2]/20 rounded transition flex-shrink-0"
-                                    title="Add to subgroup"
-                                  >
-                                    <svg className="w-3 h-3 text-[#9daaf2]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                  </button>
-                                </div>
+                                <label key={subgroup.id} className="flex items-center cursor-pointer group bg-gray-50 dark:bg-[#1a2238] border border-gray-200 dark:border-[#9daaf2] rounded px-2 py-1.5 hover:border-[#ff6a3d] dark:hover:border-[#ff6a3d] transition">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSubgroups.includes(subgroup.id)}
+                                    onChange={() => handleCheckSubgroup(subgroup.id)}
+                                    className="w-3 h-3 mr-2 accent-[#9daaf2] cursor-pointer"
+                                  />
+                                  <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-[#ff6a3d] dark:group-hover:text-[#ff6a3d] transition">{subgroup.name}</span>
+                                </label>
                               ))}
                           </div>
                         )}
@@ -970,8 +1082,8 @@ export default function Feed() {
           ))}
         </div>
 
-        {/* Middle Panel - 60% - Posts */}
-        <div className="w-[60%] h-[calc(100vh-64px)] overflow-y-auto p-6">
+        {/* Middle Panel - 55% - Posts */}
+        <div className="w-[55%] h-[calc(100vh-64px)] overflow-y-auto p-6">
           <h2 className="font-bold text-2xl mb-6">Feed</h2>
           {posts.length === 0 ? (
             <div className="text-center p-12 bg-white dark:bg-[#1a2238] rounded-lg border border-gray-200 dark:border-[#9daaf2]">
@@ -1362,6 +1474,124 @@ export default function Feed() {
                   className="px-6 py-2 bg-[#9daaf2] hover:bg-[#ff6a3d] text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Post
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Group Modal */}
+      {showNewGroupModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setShowNewGroupModal(false)}>
+          <div className="bg-white dark:bg-[#1a2238] rounded-lg shadow-xl p-6 w-full max-w-md border border-gray-200 dark:border-[#9daaf2]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create New Group</h2>
+              <button
+                onClick={() => setShowNewGroupModal(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Group Name
+                </label>
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="Enter group name"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-white dark:bg-[#1a2238] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#ff6a3d]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Interest
+                </label>
+                <p className="text-sm text-gray-600 dark:text-gray-400 px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-gray-50 dark:bg-[#1a2238]">
+                  {interests.find(i => i.id === selectedInterestForGroup)?.name || 'Selected Interest'}
+                </p>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4">
+                <button
+                  onClick={() => setShowNewGroupModal(false)}
+                  className="px-6 py-2 border border-gray-300 dark:border-[#9daaf2] text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-[#9daaf2]/20 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateGroup}
+                  disabled={!newGroupName.trim()}
+                  className="px-6 py-2 bg-[#9daaf2] hover:bg-[#ff6a3d] text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Subgroup Modal */}
+      {showNewSubgroupModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setShowNewSubgroupModal(false)}>
+          <div className="bg-white dark:bg-[#1a2238] rounded-lg shadow-xl p-6 w-full max-w-md border border-gray-200 dark:border-[#9daaf2]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create New Subgroup</h2>
+              <button
+                onClick={() => setShowNewSubgroupModal(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Subgroup Name
+                </label>
+                <input
+                  type="text"
+                  value={newSubgroupName}
+                  onChange={(e) => setNewSubgroupName(e.target.value)}
+                  placeholder="Enter subgroup name"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-white dark:bg-[#1a2238] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#ff6a3d]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Group
+                </label>
+                <p className="text-sm text-gray-600 dark:text-gray-400 px-4 py-3 border border-gray-300 dark:border-[#9daaf2] rounded-lg bg-gray-50 dark:bg-[#1a2238]">
+                  {groups.find(g => g.id === selectedGroupForSubgroup)?.name || 'Selected Group'}
+                </p>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4">
+                <button
+                  onClick={() => setShowNewSubgroupModal(false)}
+                  className="px-6 py-2 border border-gray-300 dark:border-[#9daaf2] text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-[#9daaf2]/20 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateSubgroup}
+                  disabled={!newSubgroupName.trim()}
+                  className="px-6 py-2 bg-[#9daaf2] hover:bg-[#ff6a3d] text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create
                 </button>
               </div>
             </div>
