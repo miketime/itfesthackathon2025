@@ -141,7 +141,7 @@ export default function Feed() {
       }
 
       // Remove duplicates
-      subgroupFilter = [...new Set(subgroupFilter)]
+      subgroupFilter = Array.from(new Set(subgroupFilter))
 
       if (subgroupFilter.length === 0) {
         setPosts([])
@@ -185,15 +185,79 @@ export default function Feed() {
   }
 
   const handleCheckInterest = (id: number) => {
-    setSelectedInterests(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    )
+    setSelectedInterests(prev => {
+      const isChecked = prev.includes(id)
+
+      if (isChecked) {
+        // Unchecking interest - uncheck all child groups and subgroups
+        const childGroupIds = groups
+          .filter(g => g.interest_id === id)
+          .map(g => g.id)
+
+        setSelectedGroups(prevGroups =>
+          prevGroups.filter(gId => !childGroupIds.includes(gId))
+        )
+
+        const childSubgroupIds = subgroups
+          .filter(sg => childGroupIds.includes(sg.group_id))
+          .map(sg => sg.id)
+
+        setSelectedSubgroups(prevSubgroups =>
+          prevSubgroups.filter(sgId => !childSubgroupIds.includes(sgId))
+        )
+
+        return prev.filter(i => i !== id)
+      } else {
+        // Checking interest - check all child groups and subgroups
+        const childGroupIds = groups
+          .filter(g => g.interest_id === id)
+          .map(g => g.id)
+
+        setSelectedGroups(prevGroups =>
+          Array.from(new Set([...prevGroups, ...childGroupIds]))
+        )
+
+        const childSubgroupIds = subgroups
+          .filter(sg => childGroupIds.includes(sg.group_id))
+          .map(sg => sg.id)
+
+        setSelectedSubgroups(prevSubgroups =>
+          Array.from(new Set([...prevSubgroups, ...childSubgroupIds]))
+        )
+
+        return [...prev, id]
+      }
+    })
   }
 
   const handleCheckGroup = (id: number) => {
-    setSelectedGroups(prev =>
-      prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id]
-    )
+    setSelectedGroups(prev => {
+      const isChecked = prev.includes(id)
+
+      if (isChecked) {
+        // Unchecking group - uncheck all child subgroups
+        const childSubgroupIds = subgroups
+          .filter(sg => sg.group_id === id)
+          .map(sg => sg.id)
+
+        setSelectedSubgroups(prevSubgroups =>
+          prevSubgroups.filter(sgId => !childSubgroupIds.includes(sgId))
+        )
+
+        return prev.filter(g => g !== id)
+      } else {
+        // Checking group - check all child subgroups
+        const childSubgroupIds = subgroups
+          .filter(sg => sg.group_id === id)
+          .map(sg => sg.id)
+
+        setSelectedSubgroups(prevSubgroups =>
+          Array.from(new Set([...prevSubgroups, ...childSubgroupIds]))
+        )
+
+        return [...prev, id]
+      }
+    })
   }
 
   const handleCheckSubgroup = (id: number) => {
