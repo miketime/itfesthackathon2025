@@ -45,8 +45,8 @@ export default function SignUpPage() {
 
       if (error) throw error
 
-      // Redirect to feed on successful signup
-      router.push('/feed')
+      // Redirect to onboarding on successful signup
+      router.push('/onboarding')
     } catch (error: any) {
       setError(error.message || 'An error occurred during sign up')
     } finally {
